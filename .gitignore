@@ -222,3 +222,14 @@ __marimo__/
 env.txt
 reports/
 results/
+crash.txt
+
+# Local agent / workspace artifacts
+.claude/
+tasks/
+
+# Local portfolio exports and sensitive broker data
+portfolio/
+
+# Local environment overrides that may contain credentials
+.env.enterprise
