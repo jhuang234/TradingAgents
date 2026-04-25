@@ -1,4 +1,5 @@
 from tradingagents.agents.utils.agent_utils import build_instrument_context, get_language_instruction
+from tradingagents.portfolio import format_portfolio_context_for_prompt
 
 
 def create_portfolio_manager(llm, memory):
@@ -14,6 +15,7 @@ def create_portfolio_manager(llm, memory):
         sentiment_report = state["sentiment_report"]
         research_plan = state["investment_plan"]
         trader_plan = state["trader_investment_plan"]
+        portfolio_context = state.get("portfolio_context", {})
 
         curr_situation = f"{market_research_report}\n\n{sentiment_report}\n\n{news_report}\n\n{fundamentals_report}"
         past_memories = memory.get_memories(curr_situation, n_matches=2)
@@ -21,6 +23,10 @@ def create_portfolio_manager(llm, memory):
         past_memory_str = ""
         for i, rec in enumerate(past_memories, 1):
             past_memory_str += rec["recommendation"] + "\n\n"
+
+        portfolio_summary = format_portfolio_context_for_prompt(
+            portfolio_context, state["company_of_interest"]
+        )
 
         prompt = f"""As the Portfolio Manager, synthesize the risk analysts' debate and deliver the final trading decision.
 
@@ -39,11 +45,40 @@ def create_portfolio_manager(llm, memory):
 - Research Manager's investment plan: **{research_plan}**
 - Trader's transaction proposal: **{trader_plan}**
 - Lessons from past decisions: **{past_memory_str}**
+- Portfolio context:
+{portfolio_summary}
 
 **Required Output Structure:**
 1. **Rating**: State one of Buy / Overweight / Hold / Underweight / Sell.
-2. **Executive Summary**: A concise action plan covering entry strategy, position sizing, key risk levels, and time horizon.
-3. **Investment Thesis**: Detailed reasoning anchored in the analysts' debate and past reflections.
+2. **Current Position**
+   - Current shares
+   - Current account weight %
+   - Current cash weight %
+3. **Target Allocation**
+   - Initial target weight %
+   - Add-on target weight %
+   - Max target weight %
+4. **Execution Plan**
+   - **Action Now**: initiate / add / hold / trim / exit
+   - **Entry/Add Rule**: if price retraces to X, move to Y%; if price confirms above Z, move to Q%
+   - **Stop-Loss**: exact price or % threshold that triggers a cut or full exit
+   - **Take-Profit 1**: exact price, return %, or condition that triggers partial profit-taking, and what weight to trim to
+   - **Take-Profit 2**: exact price, return %, or condition that triggers further profit-taking or full exit
+   - **Thesis Invalidation**: exact condition that overrides the bullish thesis and forces reduction or exit
+5. **Portfolio Fit**: Explain how the existing position, account weight, concentration risk, and cash balance affect the decision.
+6. **Investment Thesis**: Detailed reasoning anchored in the analysts' debate and past reflections.
+
+**Hard Requirements**
+- Use explicit percentages for every target allocation item.
+- If there is no current position, state `Current account weight: 0.00%`.
+- If exact current shares are unknown, say `unknown`, but still provide percentage-based targets.
+- Do not answer with only tranche language like "starter stake" or "small position"; translate every sizing recommendation into a percentage target.
+- Be specific enough that a portfolio manager can execute the instruction without guessing the intended weight range.
+- For any single stock or ETF, `Max target weight` must not exceed `5.00%` of total portfolio capital.
+- `Execution Plan` must include a stop-loss mechanism. State exactly when to cut or exit the position if price action or thesis invalidation occurs.
+- `Execution Plan` must include a take-profit mechanism. State exactly when to trim or realize gains if the trade works.
+- Output every `Execution Plan` sub-item explicitly with the labels `Action Now`, `Entry/Add Rule`, `Stop-Loss`, `Take-Profit 1`, `Take-Profit 2`, and `Thesis Invalidation`.
+- If the proposed target would otherwise exceed 5.00%, cap it at 5.00% and explain why.
 
 ---
 

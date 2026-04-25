@@ -1,5 +1,7 @@
 import questionary
 from typing import List, Optional, Tuple, Dict
+from pathlib import Path
+import re
 
 from rich.console import Console
 
@@ -16,6 +18,68 @@ ANALYST_ORDER = [
     ("News Analyst", AnalystType.NEWS),
     ("Fundamentals Analyst", AnalystType.FUNDAMENTALS),
 ]
+
+
+PORTFOLIO_FILENAME_TIMESTAMP_RE = re.compile(r"(\d{4}-\d{2}-\d{2}-\d{6})")
+
+
+def get_portfolio_search_dirs(base_dir: Optional[Path] = None) -> List[Path]:
+    root = base_dir or Path(__file__).resolve().parent.parent
+    candidates = [
+        root / "portfolio",
+        root / "tradingagents" / "portfolio",
+    ]
+
+    deduped: List[Path] = []
+    seen = set()
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        deduped.append(candidate)
+    return deduped
+
+
+def _portfolio_sort_key(path: Path) -> tuple[str, float]:
+    match = PORTFOLIO_FILENAME_TIMESTAMP_RE.search(path.name)
+    timestamp = match.group(1) if match else ""
+    return (timestamp, path.stat().st_mtime)
+
+
+def find_default_portfolio_path(search_dirs: Optional[List[Path]] = None) -> Optional[str]:
+    candidates = []
+    for search_dir in search_dirs or get_portfolio_search_dirs():
+        if not search_dir.exists():
+            continue
+        candidates.extend(search_dir.glob("*.csv"))
+
+    if not candidates:
+        return None
+
+    latest = max(candidates, key=_portfolio_sort_key)
+    return str(latest)
+
+
+def get_portfolio_path(default_path: Optional[str] = None) -> Optional[str]:
+    prompt = "Enter portfolio CSV path (optional, press Enter to skip):"
+    portfolio_path = questionary.text(
+        prompt,
+        default=default_path or "",
+        style=questionary.Style(
+            [
+                ("text", "fg:green"),
+                ("highlighted", "noinherit"),
+            ]
+        ),
+    ).ask()
+
+    if portfolio_path is None:
+        console.print("\n[red]Portfolio input cancelled. Exiting...[/red]")
+        exit(1)
+
+    normalized = portfolio_path.strip()
+    return normalized or None
 
 
 def get_ticker() -> str:

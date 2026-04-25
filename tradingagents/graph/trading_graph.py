@@ -38,6 +38,7 @@ from .setup import GraphSetup
 from .propagation import Propagator
 from .reflection import Reflector
 from .signal_processing import SignalProcessor
+from .stage_runner import StageRunner
 
 
 class TradingAgentsGraph:
@@ -130,6 +131,13 @@ class TradingAgentsGraph:
 
         # Set up the graph
         self.graph = self.graph_setup.setup_graph(selected_analysts)
+        self.stage_graphs = {
+            "analyst_reports": self.graph_setup.build_analyst_graph(selected_analysts),
+            "investment_debate": self.graph_setup.build_debate_graph(),
+            "trader_plan": self.graph_setup.build_trader_graph(),
+            "risk_debate": self.graph_setup.build_risk_graph(),
+            "portfolio_decision": self.graph_setup.build_portfolio_graph(),
+        }
 
     def _get_provider_kwargs(self) -> Dict[str, Any]:
         """Get provider-specific kwargs for LLM client creation."""
@@ -189,14 +197,14 @@ class TradingAgentsGraph:
             ),
         }
 
-    def propagate(self, company_name, trade_date):
+    def propagate(self, company_name, trade_date, portfolio_context: Optional[Dict[str, Any]] = None):
         """Run the trading agents graph for a company on a specific date."""
 
         self.ticker = company_name
 
         # Initialize state
         init_agent_state = self.propagator.create_initial_state(
-            company_name, trade_date
+            company_name, trade_date, portfolio_context=portfolio_context
         )
         args = self.propagator.get_graph_args()
 
@@ -224,11 +232,56 @@ class TradingAgentsGraph:
         # Return decision and processed signal
         return final_state, self.process_signal(final_state["final_trade_decision"])
 
+    def propagate_staged(
+        self,
+        company_name,
+        trade_date,
+        portfolio_context: Optional[Dict[str, Any]] = None,
+        resume: bool = True,
+        resume_from_stage: str | None = None,
+        on_stage_start=None,
+        on_stage_skip=None,
+        on_retry=None,
+        chunk_handler=None,
+        debug_log=None,
+    ):
+        self.ticker = company_name
+        runner = StageRunner(
+            self,
+            on_stage_start=on_stage_start,
+            on_stage_skip=on_stage_skip,
+            on_retry=on_retry,
+            chunk_handler=chunk_handler,
+            debug_log=debug_log,
+            resume_from_stage=resume_from_stage,
+        )
+        final_state = runner.run(
+            company_name,
+            trade_date,
+            portfolio_context=portfolio_context,
+            resume=resume,
+        )
+        return final_state, self.process_signal(final_state["final_trade_decision"])
+
+    def run_stage(self, stage_name: str, state: Dict[str, Any], callbacks: Optional[List] = None, chunk_handler=None):
+        if stage_name == "signal_process":
+            return state
+
+        stage_graph = self.stage_graphs[stage_name]
+        args = self.propagator.get_graph_args(callbacks=callbacks)
+        final_state = None
+        for chunk in stage_graph.stream(state, **args):
+            final_state = chunk
+            if chunk_handler:
+                chunk_handler(stage_name, chunk)
+        return final_state or state
+
     def _log_state(self, trade_date, final_state):
         """Log the final state to a JSON file."""
         self.log_states_dict[str(trade_date)] = {
             "company_of_interest": final_state["company_of_interest"],
             "trade_date": final_state["trade_date"],
+            "portfolio_context": final_state.get("portfolio_context", {}),
             "market_report": final_state["market_report"],
             "sentiment_report": final_state["sentiment_report"],
             "news_report": final_state["news_report"],

@@ -6,6 +6,7 @@ from .setup import GraphSetup
 from .propagation import Propagator
 from .reflection import Reflector
 from .signal_processing import SignalProcessor
+from .stage_runner import StageRunner
 
 __all__ = [
     "TradingAgentsGraph",
@@ -14,4 +15,5 @@ __all__ = [
     "Propagator",
     "Reflector",
     "SignalProcessor",
+    "StageRunner",
 ]
