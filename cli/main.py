@@ -591,6 +591,8 @@ def get_user_selections(
     shallow_thinker_override: str | None = None,
     deep_thinker_override: str | None = None,
     google_thinking_level_override: str | None = None,
+    ticker_override: str | None = None,
+    auto_defaults: bool = False,
 ):
     """Get all user selections before starting the analysis display."""
     # Display ASCII art welcome message
@@ -638,10 +640,14 @@ def get_user_selections(
             "SPY",
         )
     )
-    selected_ticker = get_ticker()
+    if auto_defaults and ticker_override:
+        selected_ticker = normalize_ticker_symbol(ticker_override)
+        console.print(f"[green]Ticker:[/green] {selected_ticker}")
+    else:
+        selected_ticker = get_ticker()
 
     # Step 2: Analysis date
-    default_date = datetime.datetime.now().strftime("%Y-%m-%d")
+    default_date = get_recent_trading_day_for_ticker(selected_ticker) if auto_defaults else datetime.datetime.now().strftime("%Y-%m-%d")
     console.print(
         create_question_box(
             "Step 2: Analysis Date",
@@ -649,7 +655,11 @@ def get_user_selections(
             default_date,
         )
     )
-    analysis_date = get_analysis_date()
+    if auto_defaults:
+        analysis_date = default_date
+        console.print(f"[green]Analysis date:[/green] {analysis_date}")
+    else:
+        analysis_date = get_analysis_date()
 
     # Step 3: Output language
     console.print(
@@ -658,7 +668,11 @@ def get_user_selections(
             "Select the language for analyst reports and final decision"
         )
     )
-    output_language = ask_output_language()
+    if auto_defaults:
+        output_language = "English"
+        console.print(f"[green]Output language:[/green] {output_language}")
+    else:
+        output_language = ask_output_language()
 
     # Step 4: Portfolio source
     auto_portfolio_path = find_default_portfolio_path() if auto_load_portfolio else None
@@ -687,7 +701,15 @@ def get_user_selections(
             "Step 5: Analysts Team", "Select your LLM analyst agents for the analysis"
         )
     )
-    selected_analysts = select_analysts()
+    if auto_defaults:
+        selected_analysts = [
+            AnalystType.MARKET,
+            AnalystType.SOCIAL,
+            AnalystType.NEWS,
+            AnalystType.FUNDAMENTALS,
+        ]
+    else:
+        selected_analysts = select_analysts()
     console.print(
         f"[green]Selected analysts:[/green] {', '.join(analyst.value for analyst in selected_analysts)}"
     )
@@ -698,7 +720,11 @@ def get_user_selections(
             "Step 6: Research Depth", "Select your research depth level"
         )
     )
-    selected_research_depth = select_research_depth()
+    if auto_defaults:
+        selected_research_depth = 3
+        console.print(f"[green]Research depth:[/green] Medium ({selected_research_depth})")
+    else:
+        selected_research_depth = select_research_depth()
 
     # Step 7: LLM Provider
     console.print(
@@ -706,27 +732,13 @@ def get_user_selections(
             "Step 7: LLM Provider", "Select your LLM provider"
         )
     )
-    if llm_provider_override:
+    if auto_defaults and not llm_provider_override:
+        selected_llm_provider = config_provider = DEFAULT_CONFIG["llm_provider"].lower()
+        backend_url = DEFAULT_CONFIG.get("backend_url") or get_provider_backend_url(config_provider)
+        console.print(f"[green]LLM provider:[/green] {selected_llm_provider}")
+    elif llm_provider_override:
         selected_llm_provider = llm_provider_override.lower()
-        backend_url = next(
-            (
-                url
-                for provider, url in [
-                    ("openai", "https://api.openai.com/v1"),
-                    ("google", None),
-                    ("anthropic", "https://api.anthropic.com/"),
-                    ("xai", "https://api.x.ai/v1"),
-                    ("deepseek", "https://api.deepseek.com"),
-                    ("qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
-                    ("glm", "https://open.bigmodel.cn/api/paas/v4/"),
-                    ("openrouter", "https://openrouter.ai/api/v1"),
-                    ("azure", None),
-                    ("ollama", "http://localhost:11434/v1"),
-                ]
-                if provider == selected_llm_provider
-            ),
-            None,
-        )
+        backend_url = get_provider_backend_url(selected_llm_provider)
         console.print(f"[green]LLM provider:[/green] {selected_llm_provider}")
     else:
         selected_llm_provider, backend_url = select_llm_provider()
@@ -737,13 +749,19 @@ def get_user_selections(
             "Step 8: Thinking Agents", "Select your thinking agents for analysis"
         )
     )
-    if shallow_thinker_override:
+    if auto_defaults and not shallow_thinker_override:
+        selected_shallow_thinker = DEFAULT_CONFIG["quick_think_llm"]
+        console.print(f"[green]Quick-thinking model:[/green] {selected_shallow_thinker}")
+    elif shallow_thinker_override:
         selected_shallow_thinker = shallow_thinker_override
         console.print(f"[green]Quick-thinking model:[/green] {selected_shallow_thinker}")
     else:
         selected_shallow_thinker = select_shallow_thinking_agent(selected_llm_provider)
 
-    if deep_thinker_override:
+    if auto_defaults and not deep_thinker_override:
+        selected_deep_thinker = DEFAULT_CONFIG["deep_think_llm"]
+        console.print(f"[green]Deep-thinking model:[/green] {selected_deep_thinker}")
+    elif deep_thinker_override:
         selected_deep_thinker = deep_thinker_override
         console.print(f"[green]Deep-thinking model:[/green] {selected_deep_thinker}")
     else:
@@ -762,7 +780,10 @@ def get_user_selections(
                 "Configure Gemini thinking mode"
             )
         )
-        if google_thinking_level_override:
+        if auto_defaults and google_thinking_level_override is None:
+            thinking_level = DEFAULT_CONFIG.get("google_thinking_level")
+            console.print(f"[green]Gemini thinking mode:[/green] {thinking_level or 'default'}")
+        elif google_thinking_level_override:
             thinking_level = google_thinking_level_override
             console.print(f"[green]Gemini thinking mode:[/green] {thinking_level}")
         else:
@@ -1183,6 +1204,8 @@ def run_analysis(
     deep_thinker_override: str | None = None,
     google_thinking_level_override: str | None = None,
     resume_from_stage: str | None = None,
+    ticker_override: str | None = None,
+    auto_defaults: bool = False,
 ):
     # First get all user selections
     selections = get_user_selections(
@@ -1192,6 +1215,8 @@ def run_analysis(
         shallow_thinker_override=shallow_thinker_override,
         deep_thinker_override=deep_thinker_override,
         google_thinking_level_override=google_thinking_level_override,
+        ticker_override=ticker_override,
+        auto_defaults=auto_defaults,
     )
     portfolio_context = {}
     if selections.get("portfolio_path"):
@@ -1476,6 +1501,16 @@ def run_analysis(
 
 @app.command()
 def analyze(
+    ticker: Optional[str] = typer.Option(
+        None,
+        "--ticker",
+        help="Ticker symbol to analyze. Use with --auto-defaults for non-interactive runs.",
+    ),
+    auto_defaults: bool = typer.Option(
+        False,
+        "--auto-defaults",
+        help="Run non-interactively with automatic defaults: recent trading day, English output, all analysts, medium research depth, and no prompts beyond the provided ticker.",
+    ),
     portfolio_file: Optional[Path] = typer.Option(
         None,
         "--portfolio-file",
@@ -1518,6 +1553,9 @@ def analyze(
         help="Resume from the portfolio manager stage using the existing checkpoint for this ticker/date.",
     ),
 ):
+    if auto_defaults and not ticker:
+        raise typer.BadParameter("--ticker is required when --auto-defaults is used.")
+
     run_analysis(
         portfolio_path_override=str(portfolio_file) if portfolio_file else None,
         auto_load_portfolio=not no_portfolio,
@@ -1526,8 +1564,30 @@ def analyze(
         deep_thinker_override=deep_model,
         google_thinking_level_override=google_thinking_level,
         resume_from_stage="portfolio_decision" if rerun_portfolio_manager else None,
+        ticker_override=ticker,
+        auto_defaults=auto_defaults,
     )
 
 
 if __name__ == "__main__":
     app()
+    def get_provider_backend_url(provider_key: str) -> str | None:
+        return next(
+            (
+                url
+                for provider, url in [
+                    ("openai", "https://api.openai.com/v1"),
+                    ("google", None),
+                    ("anthropic", "https://api.anthropic.com/"),
+                    ("xai", "https://api.x.ai/v1"),
+                    ("deepseek", "https://api.deepseek.com"),
+                    ("qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+                    ("glm", "https://open.bigmodel.cn/api/paas/v4/"),
+                    ("openrouter", "https://openrouter.ai/api/v1"),
+                    ("azure", None),
+                    ("ollama", "http://localhost:11434/v1"),
+                ]
+                if provider == provider_key
+            ),
+            None,
+        )

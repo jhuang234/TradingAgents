@@ -2,6 +2,8 @@ import questionary
 from typing import List, Optional, Tuple, Dict
 from pathlib import Path
 import re
+import datetime
+from zoneinfo import ZoneInfo
 
 from rich.console import Console
 
@@ -138,6 +140,41 @@ def get_analysis_date() -> str:
         exit(1)
 
     return date.strip()
+
+
+def get_recent_trading_day_for_ticker(ticker: str) -> str:
+    """Return the most recent trading day for the given ticker.
+
+    Uses recent market data when available, then falls back to the latest weekday.
+    """
+    today_et = datetime.datetime.now(ZoneInfo("America/New_York")).date()
+
+    try:
+        import yfinance as yf
+
+        history = yf.download(
+            ticker,
+            period="10d",
+            interval="1d",
+            progress=False,
+            auto_adjust=False,
+            threads=False,
+        )
+        if history is not None and not history.empty:
+            last_index = history.index[-1]
+            if hasattr(last_index, "date"):
+                last_trade_date = last_index.date()
+            else:
+                last_trade_date = datetime.date.fromisoformat(str(last_index)[:10])
+            if last_trade_date <= today_et:
+                return last_trade_date.isoformat()
+    except Exception:
+        pass
+
+    fallback = today_et
+    while fallback.weekday() >= 5:
+        fallback -= datetime.timedelta(days=1)
+    return fallback.isoformat()
 
 
 def select_analysts() -> List[AnalystType]:
