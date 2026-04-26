@@ -254,6 +254,28 @@ FALLBACK_MODEL_RETRY_ATTEMPTS = 3
 GOOGLE_FLASH_LITE_FALLBACK = "gemini-3.1-flash-lite-preview"
 
 
+def get_provider_backend_url(provider_key: str) -> str | None:
+    return next(
+        (
+            url
+            for provider, url in [
+                ("openai", "https://api.openai.com/v1"),
+                ("google", None),
+                ("anthropic", "https://api.anthropic.com/"),
+                ("xai", "https://api.x.ai/v1"),
+                ("deepseek", "https://api.deepseek.com"),
+                ("qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+                ("glm", "https://open.bigmodel.cn/api/paas/v4/"),
+                ("openrouter", "https://openrouter.ai/api/v1"),
+                ("azure", None),
+                ("ollama", "http://localhost:11434/v1"),
+            ]
+            if provider == provider_key
+        ),
+        None,
+    )
+
+
 def _coerce_error_status(value):
     if callable(value):
         try:
@@ -1571,23 +1593,3 @@ def analyze(
 
 if __name__ == "__main__":
     app()
-    def get_provider_backend_url(provider_key: str) -> str | None:
-        return next(
-            (
-                url
-                for provider, url in [
-                    ("openai", "https://api.openai.com/v1"),
-                    ("google", None),
-                    ("anthropic", "https://api.anthropic.com/"),
-                    ("xai", "https://api.x.ai/v1"),
-                    ("deepseek", "https://api.deepseek.com"),
-                    ("qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
-                    ("glm", "https://open.bigmodel.cn/api/paas/v4/"),
-                    ("openrouter", "https://openrouter.ai/api/v1"),
-                    ("azure", None),
-                    ("ollama", "http://localhost:11434/v1"),
-                ]
-                if provider == provider_key
-            ),
-            None,
-        )
